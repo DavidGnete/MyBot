@@ -12,6 +12,13 @@ const esquemaConfig = z.object({
   NODE_ENV: z.enum(['development', 'production']).default('development'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   DATABASE_URL: z.string().startsWith('postgres://', 'DATABASE_URL debe empezar por postgres://'),
+
+  // --- Telegram ---
+  // Opcionales aquí para que los scripts de base de datos no los exijan;
+  // el bot los verifica al arrancar.
+  TELEGRAM_BOT_TOKEN: z.string().regex(/^\d+:[\w-]+$/, 'Formato esperado: 123456:ABC...').optional(),
+  // Vacío = todavía no lo conoces (el bot te lo dice con /start)
+  TELEGRAM_CHAT_ID: z.preprocess((v) => (v === '' ? undefined : v), z.coerce.number().int().optional()),
 });
 
 const resultado = esquemaConfig.safeParse(process.env);

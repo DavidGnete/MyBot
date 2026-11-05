@@ -2,7 +2,7 @@
   "name": "agente-empleo",
   "version": "0.1.0",
   "private": true,
-  "description": "Agente que monitorea ofertas de empleo y postula automáticamente",
+  "description": "Busca ofertas de empleo de un rol y postula subiendo la hoja de vida",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "drizzle-orm": "^0.45.4",
+    "grammy": "^1.46.0",
     "pg": "^8.23.1",
     "pino": "^10.4.0",
     "zod": "^4.6.7"

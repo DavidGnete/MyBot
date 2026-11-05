@@ -44,6 +44,17 @@ const marcasDeTiempo = {
     .$onUpdate(() => new Date()),
 };
 
+// ---------- ajustes: configuración que cambias desde Telegram (ej. el rol) ----------
+
+export const ajustes = pgTable('ajustes', {
+  clave: text('clave').primaryKey(), // ej. "rol"
+  valor: text('valor').notNull(),
+  actualizadoEn: timestamp('actualizado_en', { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
 // ---------- fuentes: los sitios que el agente monitorea ----------
 
 export const fuentes = pgTable('fuentes', {

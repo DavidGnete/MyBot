@@ -5,7 +5,7 @@ import { config } from './config.js';
 export const logger = pino({
   level: config.LOG_LEVEL,
   // Por si algún día se registra un objeto con secretos, pino los oculta
-  redact: ['*.password', '*.token', '*.apiKey', 'DATABASE_URL'],
+  redact: ['*.password', '*.token', '*.apiKey', 'DATABASE_URL', 'TELEGRAM_BOT_TOKEN'],
   ...(config.NODE_ENV === 'development' && {
     transport: { target: 'pino-pretty', options: { colorize: true, translateTime: 'SYS:HH:MM:ss' } },
   }),
