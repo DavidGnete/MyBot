@@ -1,0 +1,22 @@
+# Dependencias
+node_modules/
+
+# Secretos: NUNCA subir
+.env
+.env.*
+!.env.example
+
+# Datos personales: perfil real, hojas de vida y evidencia
+datos/
+capturas/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+
+# Varios
+*.log
+dist/
