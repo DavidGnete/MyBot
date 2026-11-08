@@ -5,11 +5,12 @@ import { buscarOfertas } from '../busqueda/buscar-ofertas.js';
 import { formatearResultado } from '../busqueda/formatear.js';
 import { generarVistaPrevia } from '../postulacion/vista-previa.js';
 import { ErrorPostulacion } from '../postulacion/preparar.js';
-import { enviarPostulacion, enviadasHoy } from '../postulacion/enviar.js';
+import { enviarAsistido, enviadasHoy } from '../postulacion/enviar.js';
 
 const COLA_BUSCAR = 'buscar-ofertas';
 const COLA_VISTA_PREVIA = 'vista-previa';
-const COLA_ENVIAR = 'enviar-postulacion';
+// Cola nueva (no "enviar-postulacion"): pg-boss no cambia las opciones de una cola que ya existe
+const COLA_ENVIAR = 'envio-asistido';
 const CADA_HORA = '0 * * * *'; // cron: minuto 0 de cada hora
 
 type DatosBusqueda = { manual?: boolean };
@@ -72,7 +73,7 @@ export async function iniciarProgramador(avisos: Avisos) {
         // Solo ofrecemos [Enviar] si el formulario quedó completo
         completa
           ? [
-              { texto: '✅ Enviar postulación', datos: `enviar:${postulacionId}` },
+              { texto: '🖥️ Abrir en mi PC para enviar', datos: `enviar:${postulacionId}` },
               { texto: '❌ Cancelar', datos: `cancelar:${postulacionId}` },
             ]
           : undefined,
@@ -84,11 +85,21 @@ export async function iniciarProgramador(avisos: Avisos) {
     }
   });
 
-  // ---- Envío real (fase 4c): solo al tocar [Enviar]; sin reintentos automáticos ----
-  await boss.createQueue(COLA_ENVIAR, { policy: 'standard', retryLimit: 0 });
+  // ---- Envío ASISTIDO (fase 4d): solo al tocar el botón; sin reintentos automáticos ----
+  // expireInSeconds: la ventana espera hasta 20 min a que termines (el límite por defecto es 15)
+  await boss.createQueue(COLA_ENVIAR, { policy: 'standard', retryLimit: 0, expireInSeconds: 30 * 60 });
 
   await boss.work<DatosEnvio>(COLA_ENVIAR, async ([trabajo]) => {
-    const resultado = await enviarPostulacion(trabajo!.data.postulacionId).catch((error: unknown) => {
+    const alAbrir = async ({ titulo, empresa, faltantes, pdf }: { titulo: string; empresa: string; faltantes: string[]; pdf: string }) => {
+      await avisos.texto(
+        `🖥️ Abrí una ventana de Chrome EN TU PC con la postulación a ${empresa} (${titulo}) ya llena y tu hoja de vida en ${pdf} adjunta.\n\n` +
+          'Ahora tú:\n1. Revisa el formulario.\n2. Haz clic en "Submit application".\n' +
+          '3. Si te pide el código que llega a tu correo o un CAPTCHA, resuélvelo ahí mismo.\n\n' +
+          (faltantes.length ? `⚠️ Revisa estos campos: ${faltantes.join(', ')}\n\n` : '') +
+          `Te espero hasta 20 minutos y te confirmo cuando vea que se envió.`,
+      );
+    };
+    const resultado = await enviarAsistido(trabajo!.data.postulacionId, alAbrir).catch((error: unknown) => {
       logger.error({ err: error }, 'Falló el envío');
       return null;
     });
@@ -110,11 +121,11 @@ export async function iniciarProgramador(avisos: Avisos) {
         );
       case 'no-confirmada':
         await avisos.texto(
-          `✋ No pude confirmar el envío a ${resultado.empresa} (${resultado.titulo}).\nMotivo: ${resultado.motivo}\n\n` +
-            '⚠️ Antes de postular a mano, revisa tu correo: si llegó un correo de confirmación, el envío SÍ funcionó.\n' +
-            `Si no llegó, postula aquí: ${resultado.url}`,
+          `✋ No vi la confirmación del envío a ${resultado.empresa} (${resultado.titulo}).\nMotivo: ${resultado.motivo}\n\n` +
+            '⚠️ Revisa tu correo: si llegó la confirmación de Greenhouse, el envío SÍ funcionó.\n' +
+            `Si no llegó, toca /postular_… de nuevo para reabrir la ventana ya llena, o postula aquí: ${resultado.url}`,
         );
-        if (resultado.despues) await avisos.archivo(resultado.despues, 'Así quedó la página después de hacer clic en Submit.');
+        if (resultado.despues) await avisos.archivo(resultado.despues, 'Así estaba la ventana cuando dejé de esperar.');
         return;
     }
   });

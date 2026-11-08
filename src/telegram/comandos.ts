@@ -24,7 +24,7 @@ Busco automáticamente en Himalayas, Remote OK y Remotive (miles de empresas). N
 📝 Postular
 /ofertas — ofertas abiertas; toca /postular_N para empezar
 /saltar — descarta la oferta que estoy preparando
-/respuestas — lo que recuerdo de tus respuestas (/olvidar_N borra una)
+/respuestas — lo que recuerdo de ti (✏️ /editar_N cambia una, 🗑️ /olvidar_N la borra)
 
 📊 /estado — resumen   ❓ /ayuda — este mensaje
 📎 Envíame tu hoja de vida en PDF para guardarla o reemplazarla.

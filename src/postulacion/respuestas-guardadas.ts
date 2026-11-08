@@ -1,6 +1,6 @@
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { db } from '../db/cliente.js';
-import { respuestasGuardadas } from '../db/esquema.js';
+import { postulaciones, respuestasGuardadas } from '../db/esquema.js';
 import { normalizar } from '../busqueda/filtro.js';
 import type { Pregunta } from './tipos.js';
 
@@ -33,6 +33,35 @@ export async function buscarRespuesta(pregunta: Pregunta): Promise<string | unde
     return elegidas.every((e) => pregunta.opciones.some((o) => o.etiqueta === e)) ? fila.respuesta : undefined;
   }
   return fila.respuesta;
+}
+
+/**
+ * /editar_N: cambia una respuesta guardada Y la actualiza en las postulaciones
+ * que aún no se envían (si no, seguirían usando el valor viejo, ej. tu correo anterior).
+ */
+export async function editarRespuestaGuardada(id: number, nuevoValor: string): Promise<{ pregunta: string; actualizadas: number } | null> {
+  const [fila] = await db
+    .update(respuestasGuardadas)
+    .set({ respuesta: nuevoValor })
+    .where(eq(respuestasGuardadas.id, id))
+    .returning();
+  if (!fila) return null;
+
+  const abiertas = await db.select().from(postulaciones).where(inArray(postulaciones.estado, ['pendiente', 'en_progreso', 'error']));
+  let actualizadas = 0;
+  for (const p of abiertas) {
+    let cambio = false;
+    const respuestas = p.respuestas.map((r) => {
+      if (r.origen === 'automatica' || claveDe(r.pregunta) !== fila.clave) return r;
+      cambio = true;
+      return { ...r, respuesta: nuevoValor };
+    });
+    if (cambio) {
+      await db.update(postulaciones).set({ respuestas }).where(eq(postulaciones.id, p.id));
+      actualizadas++;
+    }
+  }
+  return { pregunta: fila.pregunta, actualizadas };
 }
 
 export async function guardarRespuesta(pregunta: Pregunta, respuesta: string): Promise<void> {

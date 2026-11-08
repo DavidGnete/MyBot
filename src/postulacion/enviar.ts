@@ -5,15 +5,18 @@ import { config } from '../config.js';
 import { db } from '../db/cliente.js';
 import { fuentes, ofertas, postulaciones } from '../db/esquema.js';
 import { obtenerAjuste } from '../ajustes.js';
+import { rutaHojaDeVida } from '../hojas-de-vida.js';
 import { logger } from '../logger.js';
 import { leerFormularioGreenhouse } from './greenhouse-preguntas.js';
 import { llenarGreenhouse, urlFormularioGreenhouse } from './llenar-greenhouse.js';
-import { conNavegador } from './navegador.js';
-import { ErrorPostulacion, ubicar } from './preparar.js';
+import { conVentanaVisible } from './navegador.js';
+import { elegirHojaDeVida, ErrorPostulacion, ubicar } from './preparar.js';
+
+const MINUTOS_DE_ESPERA = 20; // tiempo que la ventana espera a que termines
 
 export type ResultadoEnvio =
   | { tipo: 'enviada'; titulo: string; empresa: string; url: string; evidencia: string }
-  | { tipo: 'no-confirmada'; titulo: string; empresa: string; url: string; motivo: string; evidencia: string | null; despues: string | null }
+  | { tipo: 'no-confirmada'; titulo: string; empresa: string; url: string; motivo: string; despues: string | null }
   | { tipo: 'limite'; enviadasHoy: number }
   | { tipo: 'ocupada' };
 
@@ -34,38 +37,34 @@ export async function enviadasHoy(): Promise<number> {
 const EXITO = /thank you for applying|application (has been )?(submitted|received)|we('| ha)ve received your application|gracias por (postularte|tu postulaci[oó]n|aplicar)/i;
 
 /**
- * Tras hacer clic en Submit, observa la página hasta 30 s.
- * Solo devuelve "confirmada" con una señal POSITIVA clara; ante la duda, no lo damos por enviado.
+ * Espera a que TÚ termines en la ventana (código del correo, CAPTCHA, Submit).
+ * Solo cuenta como enviada con una señal POSITIVA nueva; si cierras la ventana o
+ * se acaba el tiempo, no lo damos por enviado.
  */
-async function esperarResultado(pagina: Page, textoAntes: string): Promise<{ confirmada: boolean; motivo: string }> {
-  // Si la página YA decía algo como "thank you for applying" antes del clic (ej. en la descripción), no cuenta
-  const exitoYaPresente = EXITO.test(textoAntes);
-  const limite = Date.now() + 30_000;
+async function esperarQueTermines(pagina: Page, textoAntes: string): Promise<{ confirmada: boolean; motivo: string }> {
+  const exitoYaPresente = EXITO.test(textoAntes); // ej. si la descripción ya decía "thank you for applying"
+  const limite = Date.now() + MINUTOS_DE_ESPERA * 60_000;
+
   while (Date.now() < limite) {
+    if (pagina.isClosed()) return { confirmada: false, motivo: 'cerraste la ventana sin que apareciera la confirmación' };
     if (pagina.url().includes('/confirmation')) return { confirmada: true, motivo: 'página de confirmación' };
     const texto = await pagina.locator('body').innerText().catch(() => '');
     if (!exitoYaPresente && EXITO.test(texto)) return { confirmada: true, motivo: 'mensaje de confirmación' };
-
-    // Desafío de reCAPTCHA visible: NO lo resolvemos (regla del proyecto)
-    const desafio = pagina.locator('iframe[src*="recaptcha"][src*="bframe"], iframe[title*="challenge" i]');
-    if ((await desafio.count()) > 0 && (await desafio.first().isVisible().catch(() => false))) {
-      return { confirmada: false, motivo: 'apareció un CAPTCHA' };
-    }
-    // Errores de validación del formulario
-    const errores = await pagina.locator('[id$="-error"]:visible, [role="alert"]:visible').allInnerTexts().catch(() => []);
-    const conTexto = errores.map((e) => e.trim()).filter(Boolean);
-    if (conTexto.length > 0) return { confirmada: false, motivo: `el formulario mostró errores: ${conTexto.slice(0, 3).join(' | ')}` };
-
-    await pagina.waitForTimeout(1_000);
+    await new Promise((resolver) => setTimeout(resolver, 2_000));
   }
-  return { confirmada: false, motivo: 'no apareció ninguna confirmación en 30 s (posible reCAPTCHA invisible)' };
+  return { confirmada: false, motivo: `pasaron ${MINUTOS_DE_ESPERA} minutos sin confirmación` };
 }
 
+type AlAbrir = (detalle: { titulo: string; empresa: string; faltantes: string[]; pdf: string }) => Promise<void>;
+
 /**
- * Fase 4c: llena el formulario CON el PDF, guarda evidencia, hace clic en Submit y verifica.
- * Solo se llama cuando tocas [Enviar].
+ * Fase 4d — MODO ASISTIDO. El bot NO hace clic en Submit:
+ *  1. abre una ventana visible en tu PC, llena todo y adjunta tu PDF;
+ *  2. guarda la evidencia y te avisa por Telegram;
+ *  3. tú escribes el código del correo / resuelves el CAPTCHA / haces clic en Submit;
+ *  4. el bot detecta la confirmación y registra la postulación.
  */
-export async function enviarPostulacion(postulacionId: number): Promise<ResultadoEnvio> {
+export async function enviarAsistido(postulacionId: number, alAbrir: AlAbrir): Promise<ResultadoEnvio> {
   const [fila] = await db
     .select({ postulacion: postulaciones, oferta: ofertas, fuente: fuentes })
     .from(postulaciones)
@@ -79,8 +78,7 @@ export async function enviarPostulacion(postulacionId: number): Promise<Resultad
   const hoy = await enviadasHoy();
   if (hoy >= config.LIMITE_DIARIO) return { tipo: 'limite', enviadasHoy: hoy };
 
-  // CANDADO: pasar la oferta de "apta" a "postulando" en UNA sola operación.
-  // Si ya no estaba "apta" (ej. tocaste Enviar dos veces), no se toca nada.
+  // CANDADO: "apta" -> "postulando" en UNA operación. Si tocaste el botón dos veces, el segundo no hace nada.
   const [bloqueada] = await db
     .update(ofertas)
     .set({ estado: 'postulando' })
@@ -89,11 +87,8 @@ export async function enviarPostulacion(postulacionId: number): Promise<Resultad
   if (!bloqueada) return { tipo: 'ocupada' };
 
   const base = { titulo: oferta.titulo, empresa: oferta.empresa, url: oferta.url };
-  const marcarNoConfirmada = async (motivo: string, evidencia: string | null, despues: string | null): Promise<ResultadoEnvio> => {
-    await db.update(postulaciones).set({ estado: 'error', error: motivo, rutaCaptura: evidencia }).where(eq(postulaciones.id, postulacionId));
-    await db.update(ofertas).set({ estado: 'manual' }).where(eq(ofertas.id, oferta.id));
-    return { tipo: 'no-confirmada', ...base, motivo, evidencia, despues };
-  };
+  const despues = `capturas/envio-${postulacionId}-despues.png`;
+  const evidencia = `capturas/envio-${postulacionId}-antes.png`;
 
   try {
     const ubicacion = ubicar(oferta, fuente);
@@ -101,56 +96,56 @@ export async function enviarPostulacion(postulacionId: number): Promise<Resultad
     const formulario = await leerFormularioGreenhouse(ubicacion.tablero, ubicacion.idOferta);
     const paisTelefono = (await obtenerAjuste('pais')) || undefined;
 
+    // El PDF se elige AHORA (no al crear la postulación): si subiste uno nuevo, se usa ese
+    const idioma = await elegirHojaDeVida(formulario.idioma);
+    const nombreArchivo = idioma === 'es' ? 'Hoja de vida.pdf' : 'Resume.pdf';
+    const campoCv = formulario.preguntas.find((p) => p.tipo === 'archivo')?.campo ?? 'resume';
+    const respuestasSinCv = postulacion.respuestas.filter((r) => r.origen !== 'automatica');
     await mkdir('capturas', { recursive: true });
-    const evidencia = `capturas/envio-${postulacionId}-antes.png`;
-    const despues = `capturas/envio-${postulacionId}-despues.png`;
 
-    const resultado = await conNavegador(async (pagina) => {
-      // SIN bloquearEnvios: esta vez sí se sube el PDF y se envía
+    const resultado = await conVentanaVisible(async (pagina) => {
       await pagina.goto(urlFormularioGreenhouse(ubicacion.tablero, ubicacion.idOferta), { waitUntil: 'domcontentloaded' });
-
-      const cv = postulacion.respuestas.find((r) => r.origen === 'automatica');
-      if (!cv) throw new ErrorPostulacion('No hay hoja de vida asociada a esta postulación.');
-      // Subimos con un nombre presentable (no "cv-es.pdf")
-      const nombreArchivo = cv.respuesta.includes('cv-es') ? 'Hoja de vida.pdf' : 'Resume.pdf';
-      const respuestasSinCv = postulacion.respuestas.filter((r) => r !== cv);
-
       const { faltantes } = await llenarGreenhouse(pagina, formulario.preguntas, respuestasSinCv, { subirCv: false, paisTelefono });
+
       await pagina
-        .locator(`[id="${cv.campo}"]`)
-        .setInputFiles({ name: nombreArchivo, mimeType: 'application/pdf', buffer: await readFile(cv.respuesta) });
-      // Esperar a que Greenhouse muestre el archivo subido
+        .locator(`[id="${campoCv}"]`)
+        .setInputFiles({ name: nombreArchivo, mimeType: 'application/pdf', buffer: await readFile(rutaHojaDeVida(idioma)) });
       const subido = await pagina.getByText(nombreArchivo).first().waitFor({ timeout: 30_000 }).then(() => true, () => false);
-      if (!subido) faltantes.push('Resume/CV (la subida no terminó)');
+      if (!subido) faltantes.push('Resume/CV (revisa que se haya adjuntado)');
 
-      if (faltantes.length > 0) {
-        await pagina.locator('form').first().screenshot({ path: evidencia });
-        return { enviado: false as const, motivo: `no envié porque faltan campos: ${faltantes.join(', ')}` };
-      }
-
-      // REGLA: evidencia justo antes de enviar
+      // REGLA: evidencia de cómo quedó el formulario antes de enviar
       await pagina.locator('form').first().screenshot({ path: evidencia });
       const textoAntes = await pagina.locator('body').innerText();
-      await pagina.locator('form button[type="submit"]').first().click();
-      logger.info({ postulacionId, empresa: oferta.empresa }, 'Clic en Submit');
 
-      const verificacion = await esperarResultado(pagina, textoAntes);
-      await pagina.screenshot({ path: despues });
-      return { enviado: verificacion.confirmada, motivo: verificacion.motivo };
+      // Te dejamos el botón Submit a la vista y te avisamos
+      await pagina.locator('form button[type="submit"]').first().scrollIntoViewIfNeeded().catch(() => {});
+      await pagina.bringToFront();
+      await alAbrir({ ...base, faltantes, pdf: idioma === 'es' ? 'español' : 'inglés' });
+      logger.info({ postulacionId, empresa: oferta.empresa }, 'Ventana asistida abierta: esperando al usuario');
+
+      const verificacion = await esperarQueTermines(pagina, textoAntes);
+      if (!pagina.isClosed()) await pagina.screenshot({ path: despues }).catch(() => {});
+      return verificacion;
     });
 
-    if (!resultado.enviado) return marcarNoConfirmada(resultado.motivo, evidencia, despues);
+    if (!resultado.confirmada) {
+      await db.update(postulaciones).set({ estado: 'error', error: resultado.motivo }).where(eq(postulaciones.id, postulacionId));
+      await db.update(ofertas).set({ estado: 'manual' }).where(eq(ofertas.id, oferta.id));
+      return { tipo: 'no-confirmada', ...base, motivo: resultado.motivo, despues: resultado.motivo.startsWith('cerraste') ? null : despues };
+    }
 
     await db
       .update(postulaciones)
-      .set({ estado: 'enviada', enviadaEn: new Date(), rutaCaptura: evidencia, error: null })
+      .set({ estado: 'enviada', enviadaEn: new Date(), idiomaCv: idioma, rutaCaptura: evidencia, error: null })
       .where(eq(postulaciones.id, postulacionId));
     await db.update(ofertas).set({ estado: 'postulada' }).where(eq(ofertas.id, oferta.id));
     return { tipo: 'enviada', ...base, evidencia };
   } catch (error) {
-    logger.error({ err: error, postulacionId }, 'Error enviando la postulación');
+    logger.error({ err: error, postulacionId }, 'Error en el envío asistido');
     const motivo = error instanceof ErrorPostulacion ? error.message : `error inesperado: ${(error as Error).message.split('\n')[0]}`;
-    return marcarNoConfirmada(motivo, null, null);
+    await db.update(postulaciones).set({ estado: 'error', error: motivo }).where(eq(postulaciones.id, postulacionId));
+    await db.update(ofertas).set({ estado: 'manual' }).where(eq(ofertas.id, oferta.id));
+    return { tipo: 'no-confirmada', ...base, motivo, despues: null };
   }
 }
 

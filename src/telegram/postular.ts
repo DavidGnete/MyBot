@@ -12,6 +12,7 @@ import {
   type Avance,
 } from '../postulacion/preparar.js';
 import { cancelarPostulacion } from '../postulacion/enviar.js';
+import { editarRespuestaGuardada } from '../postulacion/respuestas-guardadas.js';
 
 const MAXIMO_BOTONES = 12; // con más opciones, mejor una lista numerada
 
@@ -133,9 +134,27 @@ export function crearPostular(deps: Dependencias): Composer<Context> {
     }),
   );
 
-  // Texto libre: si hay una pregunta esperando, es tu respuesta. Si no, sigue al siguiente manejador.
+  // Respuesta guardada que estás editando (/editar_N). En memoria: si el bot se reinicia, repites /editar_N.
+  let editando: { id: number; pregunta: string } | undefined;
+
+  // Texto libre: primero una edición en curso; luego una pregunta de postulación; si no, siguiente manejador.
   postular.on('message:text', async (ctx, next) => {
-    if (ctx.message.text.startsWith('/')) return next();
+    if (ctx.message.text.startsWith('/')) {
+      editando = undefined; // cualquier comando cancela la edición
+      return next();
+    }
+    if (editando) {
+      const { id } = editando;
+      editando = undefined;
+      const resultado = await editarRespuestaGuardada(id, ctx.message.text.trim());
+      await ctx.reply(
+        resultado
+          ? `✅ Actualicé "${resultado.pregunta}".` +
+              (resultado.actualizadas ? ` También en ${resultado.actualizadas} postulación(es) que aún no se envían.` : '')
+          : 'Esa respuesta ya no existe.',
+      );
+      return;
+    }
     const activa = await postulacionActiva();
     if (!activa) return next();
     await conErrores(ctx, async () => mostrarAvance(ctx, await responder(activa.id, ctx.message.text), deps));
@@ -148,8 +167,22 @@ export function crearPostular(deps: Dependencias): Composer<Context> {
       await ctx.reply('Aún no tengo respuestas guardadas.');
       return;
     }
-    const lineas = todas.map((r) => `• ${r.pregunta}\n  → ${r.respuesta.slice(0, 80)}   /olvidar_${r.id}`);
+    const lineas = todas.map((r) => `• ${r.pregunta}\n  → ${r.respuesta.slice(0, 80)}\n  ✏️ /editar_${r.id}   🗑️ /olvidar_${r.id}`);
     await ctx.reply(['🧠 Respuestas que reutilizo:', '', ...lineas].join('\n'));
+  });
+
+  // /editar_5 — el próximo mensaje que escribas será el nuevo valor
+  postular.hears(/^\/editar_(\d+)/, async (ctx) => {
+    const [fila] = await db.select().from(respuestasGuardadas).where(eq(respuestasGuardadas.id, Number(ctx.match[1])));
+    if (!fila) {
+      await ctx.reply('No existe esa respuesta. Míralas con /respuestas');
+      return;
+    }
+    editando = { id: fila.id, pregunta: fila.pregunta };
+    await ctx.reply(
+      `✏️ "${fila.pregunta}"\nValor actual: ${fila.respuesta}\n\nEscribe el nuevo valor (o cualquier comando para cancelar).\n` +
+        'Si es una pregunta de opciones (ej. nivel de inglés), mejor usa /olvidar_' + fila.id + ' y te la preguntaré con botones.',
+    );
   });
 
   postular.hears(/^\/olvidar_(\d+)/, async (ctx) => {
@@ -174,10 +207,10 @@ export function crearPostular(deps: Dependencias): Composer<Context> {
 
   // [✅ Enviar postulación] bajo la vista previa: ENVÍO REAL
   postular.callbackQuery(/^enviar:(\d+)$/, async (ctx) => {
-    await ctx.answerCallbackQuery({ text: 'Enviando…' });
+    await ctx.answerCallbackQuery({ text: 'Abriendo la ventana en tu PC…' });
     await ctx.editMessageReplyMarkup().catch(() => {}); // quitar botones: evita tocar dos veces
     await deps.enviar(Number(ctx.match[1]));
-    await ctx.reply('📤 Enviando tu postulación (adjunto tu hoja de vida y hago clic en Submit). Te aviso el resultado en ~1 minuto.');
+    await ctx.reply('🖥️ Preparando la ventana en tu PC (lleno el formulario y adjunto tu hoja de vida). Te aviso cuando esté lista.');
   });
 
   // [❌ Cancelar]

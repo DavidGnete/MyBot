@@ -32,7 +32,7 @@ export function esAutomatizable(oferta: DatosOferta, fuente: DatosFuente): boole
 }
 
 /** Elige la hoja de vida según el idioma de la oferta; si no la tienes en ese idioma, usa la otra. */
-async function elegirHojaDeVida(idiomaOferta: string | null): Promise<Idioma> {
+export async function elegirHojaDeVida(idiomaOferta: string | null): Promise<Idioma> {
   const disponibles = await estadoHojasDeVida();
   const preferido: Idioma = idiomaOferta?.startsWith('es') ? 'es' : 'en';
   const alterno: Idioma = preferido === 'es' ? 'en' : 'es';
@@ -96,8 +96,11 @@ export async function iniciarPostulacion(ofertaId: number): Promise<Avance | { t
   const [existente] = await db.select().from(postulaciones).where(eq(postulaciones.ofertaId, ofertaId));
   if (existente?.estado === 'pendiente' || existente?.estado === 'en_progreso') return avance(existente.id);
   if (existente?.estado === 'enviada') throw new ErrorPostulacion('Ya enviaste esta postulación ✅. No se puede enviar dos veces.');
-  if (existente) {
-    throw new ErrorPostulacion(`Un intento anterior no se pudo confirmar (${existente.error ?? 'sin detalle'}). Revisa tu correo y, si no llegó confirmación, postula aquí: ${oferta.url}`);
+  if (existente?.estado === 'error') {
+    // Un intento anterior no se confirmó: lo dejamos listo para reintentar (con tus mismas respuestas)
+    await db.update(postulaciones).set({ estado: 'en_progreso', error: null }).where(eq(postulaciones.id, existente.id));
+    await db.update(ofertas).set({ estado: 'apta' }).where(eq(ofertas.id, ofertaId));
+    return avance(existente.id);
   }
 
   const activa = await postulacionActiva();
