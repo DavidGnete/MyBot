@@ -1,6 +1,13 @@
-import type { ResultadoBusqueda } from './buscar-ofertas.js';
+import type { OfertaNueva, ResultadoBusqueda } from './buscar-ofertas.js';
 
-const MAXIMO_LISTADAS = 15; // un mensaje de Telegram admite 4096 caracteres
+const MAXIMO_LISTADAS = 10; // automáticas listadas
+const POR_FUENTE = 5; // manuales listadas por plataforma
+const LIMITE_TELEGRAM = 4000; // un mensaje admite 4096 caracteres
+
+/** "Get on Board" -> "getonboard" (lo que se escribe en /ofertas <plataforma>) */
+export function clavePlataforma(nombre: string): string {
+  return nombre.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
 
 /** 7 -> "7 min", 185 -> "3 h 5 min" */
 function duracion(minutos: number): string {
@@ -23,21 +30,32 @@ export function formatearResultado(resultado: ResultadoBusqueda, manual: boolean
   const { nuevas, coincidencias, fuentesRevisadas, fuentesEnEspera, rol } = resultado;
 
   if (nuevas.length > 0) {
-    const automaticas = nuevas.filter((o) => o.automatizable).length;
-    lineas.push(
-      `🆕 ${nuevas.length} oferta(s) nueva(s) para tu rol` +
-        (automaticas ? ` — ${automaticas} las puedo llenar yo (toca 🤖 /postular_…):` : ':'),
-      '',
-    );
-    // Primero las que el bot puede llenar
-    const ordenadas = [...nuevas].sort((a, b) => Number(b.automatizable) - Number(a.automatizable));
-    for (const oferta of ordenadas.slice(0, MAXIMO_LISTADAS)) {
-      lineas.push(`• ${oferta.titulo} — ${oferta.empresa}${oferta.ubicacion ? ` (${oferta.ubicacion})` : ''}`);
-      // "vía <fuente>": los agregadores exigen mencionarlos y enlazar su página
-      lineas.push(oferta.automatizable ? `  🤖 /postular_${oferta.id}` : `  ✋ vía ${oferta.fuente}: ${oferta.url}`);
+    // Agrupamos por plataforma: así ninguna (ej. Himalayas) tapa a las demás
+    const porFuente = new Map<string, OfertaNueva[]>();
+    for (const oferta of nuevas) porFuente.set(oferta.fuente, [...(porFuente.get(oferta.fuente) ?? []), oferta]);
+    const resumen = [...porFuente].map(([fuente, lista]) => `${fuente} ${lista.length}`).join(' · ');
+    lineas.push(`🆕 ${nuevas.length} oferta(s) nueva(s) para tu rol`, `(${resumen})`);
+
+    // Primero las que el bot puede llenar (🤖), todas juntas
+    const automaticas = nuevas.filter((o) => o.automatizable);
+    if (automaticas.length) {
+      lineas.push('', `🤖 Puedo llenarlas yo (${automaticas.length}):`);
+      for (const o of automaticas.slice(0, MAXIMO_LISTADAS)) {
+        lineas.push(`• ${o.titulo} — ${o.empresa}${o.ubicacion ? ` (${o.ubicacion})` : ''}`, `  👉 /postular_${o.id}`);
+      }
     }
-    const restantes = nuevas.length - MAXIMO_LISTADAS;
-    if (restantes > 0) lineas.push('', `…y ${restantes} más.`);
+
+    // Luego las manuales, hasta POR_FUENTE de cada plataforma
+    for (const [fuente, lista] of porFuente) {
+      const manuales = lista.filter((o) => !o.automatizable);
+      if (manuales.length === 0) continue;
+      // "vía <fuente>": los agregadores exigen mencionarlos y enlazar su página
+      lineas.push('', `✋ vía ${fuente} (${manuales.length}):`);
+      for (const o of manuales.slice(0, POR_FUENTE)) {
+        lineas.push(`• ${o.titulo} — ${o.empresa}${o.ubicacion ? ` (${o.ubicacion})` : ''}`, `  ${o.url}`);
+      }
+      if (manuales.length > POR_FUENTE) lineas.push(`  …y ${manuales.length - POR_FUENTE} más: /ofertas ${clavePlataforma(fuente)}`);
+    }
     if (coincidencias > nuevas.length) {
       lineas.push('', `(Otras ${coincidencias - nuevas.length} ya te las había enviado: están más arriba en este chat.)`);
     }
@@ -67,5 +85,8 @@ export function formatearResultado(resultado: ResultadoBusqueda, manual: boolean
     lineas.push('', '⚠️ Páginas con problemas:', ...resultado.errores.map((e) => `• ${e.fuente}: ${e.mensaje}`));
   }
 
-  return lineas.length > 0 ? lineas.join('\n') : null;
+  if (lineas.length === 0) return null;
+  const mensaje = lineas.join('\n');
+  // Red de seguridad: si aun así es muy largo, Telegram lo rechazaría
+  return mensaje.length > LIMITE_TELEGRAM ? `${mensaje.slice(0, LIMITE_TELEGRAM)}\n…(mira el resto con /ofertas)` : mensaje;
 }

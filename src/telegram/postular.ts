@@ -13,6 +13,10 @@ import {
 } from '../postulacion/preparar.js';
 import { cancelarPostulacion } from '../postulacion/enviar.js';
 import { editarRespuestaGuardada } from '../postulacion/respuestas-guardadas.js';
+import { clavePlataforma } from '../busqueda/formatear.js';
+import { responderLargo } from './mensajes-largos.js';
+import { obtenerAjuste } from '../ajustes.js';
+import { coincideConRol } from '../busqueda/filtro.js';
 
 const MAXIMO_BOTONES = 12; // con más opciones, mejor una lista numerada
 
@@ -70,19 +74,28 @@ async function conErrores(ctx: Context, accion: () => Promise<void>): Promise<vo
 export function crearPostular(deps: Dependencias): Composer<Context> {
   const postular = new Composer();
 
-  const POR_GRUPO = 10; // por mensaje: 10 automáticas + 10 manuales
+  const POR_GRUPO = 10; // automáticas listadas
+  const POR_PLATAFORMA = 4; // manuales por plataforma en la vista general
+  const EN_DETALLE = 20; // manuales en /ofertas <plataforma>
 
-  // /ofertas — primero las que el bot puede llenar (con su comando), luego las manuales (con su link)
+  // /ofertas — 🤖 primero; luego las manuales agrupadas por plataforma.
+  // /ofertas jooble — solo las de esa plataforma.
   postular.command('ofertas', async (ctx) => {
-    const filas = await db
+    const filtro = clavePlataforma(ctx.match);
+    const todas = await db
       .select({ oferta: ofertas, fuente: fuentes })
       .from(ofertas)
       .innerJoin(fuentes, eq(fuentes.id, ofertas.fuenteId))
       .where(inArray(ofertas.estado, ['nueva', 'pendiente', 'apta']))
       .orderBy(desc(ofertas.creadoEn));
+    // Solo las que coinciden con tu rol ACTUAL (si cambiaste de rol, las viejas no estorban)
+    const [rol, excluir] = await Promise.all([obtenerAjuste('rol'), obtenerAjuste('excluir')]);
+    const delRol = rol ? todas.filter(({ oferta }) => coincideConRol(oferta.titulo, rol, excluir)) : todas;
+    const filas = filtro ? delRol.filter(({ fuente }) => clavePlataforma(fuente.nombre).includes(filtro)) : delRol;
 
     if (filas.length === 0) {
-      await ctx.reply('No hay ofertas abiertas. Usa /buscar.');
+      const plataformas = [...new Set(todas.map(({ fuente }) => clavePlataforma(fuente.nombre)))].join(', ');
+      await ctx.reply(filtro ? `No hay ofertas abiertas de "${ctx.match.trim()}". Plataformas con ofertas: ${plataformas || 'ninguna'}` : 'No hay ofertas abiertas. Usa /buscar.');
       return;
     }
 
@@ -90,20 +103,31 @@ export function crearPostular(deps: Dependencias): Composer<Context> {
     const manuales = filas.filter(({ oferta, fuente }) => !esAutomatizable(oferta, fuente));
     const lineas: string[] = [];
 
-    lineas.push(`🤖 PUEDO LLENARLAS YO (${automaticas.length}) — toca el comando de la que quieras:`);
-    if (automaticas.length === 0) lineas.push('  (ninguna por ahora)');
-    for (const { oferta } of automaticas.slice(0, POR_GRUPO)) {
-      // La ubicación distingue vacantes con el mismo título (ej. Clara: México, Brasil, Colombia)
-      const lugar = oferta.ubicacion ? ` (${oferta.ubicacion})` : '';
-      lineas.push(`• ${oferta.titulo} — ${oferta.empresa}${lugar}`, `  👉 /postular_${oferta.id}`);
+    if (automaticas.length || !filtro) {
+      lineas.push(`🤖 PUEDO LLENARLAS YO (${automaticas.length}) — toca el comando de la que quieras:`);
+      if (automaticas.length === 0) lineas.push('  (ninguna por ahora)');
+      for (const { oferta } of automaticas.slice(0, POR_GRUPO)) {
+        // La ubicación distingue vacantes con el mismo título (ej. Clara: México, Brasil, Colombia)
+        const lugar = oferta.ubicacion ? ` (${oferta.ubicacion})` : '';
+        lineas.push(`• ${oferta.titulo} — ${oferta.empresa}${lugar}`, `  👉 /postular_${oferta.id}`);
+      }
+      if (automaticas.length > POR_GRUPO) lineas.push(`  …y ${automaticas.length - POR_GRUPO} más`);
+      lineas.push('');
     }
-    if (automaticas.length > POR_GRUPO) lineas.push(`  …y ${automaticas.length - POR_GRUPO} más`);
 
-    lineas.push('', `✋ POSTULAS TÚ (${manuales.length}) — su página usa un sistema que aún no sé llenar:`);
-    for (const { oferta } of manuales.slice(0, POR_GRUPO)) lineas.push(`• ${oferta.titulo} — ${oferta.empresa}`, `  ${oferta.url}`);
-    if (manuales.length > POR_GRUPO) lineas.push(`  …y ${manuales.length - POR_GRUPO} más`);
+    lineas.push(`✋ POSTULAS TÚ (${manuales.length}):`);
+    const porPlataforma = new Map<string, typeof manuales>();
+    for (const fila of manuales) porPlataforma.set(fila.fuente.nombre, [...(porPlataforma.get(fila.fuente.nombre) ?? []), fila]);
+    const cuantas = filtro ? EN_DETALLE : POR_PLATAFORMA;
+    for (const [plataforma, lista] of porPlataforma) {
+      lineas.push('', `vía ${plataforma} (${lista.length}):`);
+      for (const { oferta } of lista.slice(0, cuantas)) {
+        lineas.push(`• ${oferta.titulo} — ${oferta.empresa}${oferta.ubicacion ? ` (${oferta.ubicacion})` : ''}`, `  ${oferta.url}`);
+      }
+      if (lista.length > cuantas) lineas.push(filtro ? `  …y ${lista.length - cuantas} más` : `  …ver todas: /ofertas ${clavePlataforma(plataforma)}`);
+    }
 
-    await ctx.reply(lineas.join('\n'), { link_preview_options: { is_disabled: true } });
+    await responderLargo(ctx, lineas.join('\n')); // puede ser más largo que un mensaje de Telegram
   });
 
   // /postular_12 — Telegram permite tocar estos comandos directamente en la lista

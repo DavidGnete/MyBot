@@ -23,6 +23,8 @@ export const tipoFuente = pgEnum('tipo_fuente', [
   'remotive',
   'remoteok',
   'himalayas',
+  'getonboard',
+  'jooble',
 ]);
 
 export const estadoOferta = pgEnum('estado_oferta', [

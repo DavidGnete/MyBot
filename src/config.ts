@@ -20,6 +20,11 @@ const esquemaConfig = z.object({
   // Vacío = todavía no lo conoces (el bot te lo dice con /start)
   TELEGRAM_CHAT_ID: z.preprocess((v) => (v === '' ? undefined : v), z.coerce.number().int().optional()),
 
+  // --- Fuentes con key ---
+  JOOBLE_API_KEY: z.string().min(1).optional(), // gratis en <sitio>/api/about
+  // Cada key sirve solo en el sitio del país donde se registró (co.jooble.org = Colombia)
+  JOOBLE_SITIO: z.string().regex(/^([a-z]{2}\.)?jooble\.org$/, 'Ej: co.jooble.org').default('co.jooble.org'),
+
   // --- Postulación ---
   // Máximo de postulaciones ENVIADAS por día (hora Colombia)
   LIMITE_DIARIO: z.coerce.number().int().positive().default(10),
