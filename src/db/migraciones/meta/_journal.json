@@ -15,6 +15,20 @@
       "when": 1793911794224,
       "tag": "0001_ajustes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794172054131,
+      "tag": "0002_agregadores",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794173614055,
+      "tag": "0003_respuestas_guardadas",
+      "breakpoints": true
     }
   ]
 }

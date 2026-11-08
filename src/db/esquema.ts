@@ -10,14 +10,24 @@ import {
   uniqueIndex,
   index,
 } from 'drizzle-orm/pg-core';
+import type { Pregunta, Respuesta } from '../postulacion/tipos.js';
 
 // ---------- Enums: los valores posibles quedan fijados en la base de datos ----------
 
-export const tipoFuente = pgEnum('tipo_fuente', ['greenhouse', 'lever', 'correo', 'navegador']);
+export const tipoFuente = pgEnum('tipo_fuente', [
+  'greenhouse',
+  'lever',
+  'correo',
+  'navegador',
+  // agregadores: buscan el rol en muchas empresas a la vez
+  'remotive',
+  'remoteok',
+  'himalayas',
+]);
 
 export const estadoOferta = pgEnum('estado_oferta', [
   'nueva', // recién detectada, sin filtrar
-  'descartada', // el filtro LLM dijo que no encaja
+  'descartada', // la descartaste tú (no aplica)
   'apta', // encaja, lista para postular
   'postulando', // en proceso (evita que dos trabajos la tomen a la vez)
   'postulada', // enviada con éxito
@@ -65,6 +75,7 @@ export const fuentes = pgTable('fuentes', {
   activa: boolean('activa').notNull().default(true),
   limiteDiario: integer('limite_diario').notNull().default(10), // postulaciones máximas por día
   pausadaHasta: timestamp('pausada_hasta', { withTimezone: true }), // tras un CAPTCHA
+  revisadaEn: timestamp('revisada_en', { withTimezone: true }), // última lectura exitosa (para respetar límites de cada API)
   ...marcasDeTiempo,
 }, (t) => [uniqueIndex('fuentes_tipo_identificador_uq').on(t.tipo, t.identificador)]);
 
@@ -81,7 +92,7 @@ export const ofertas = pgTable('ofertas', {
   descripcion: text('descripcion'),
   publicadaEn: timestamp('publicada_en', { withTimezone: true }),
   estado: estadoOferta('estado').notNull().default('nueva'),
-  razonFiltro: text('razon_filtro'), // explicación del LLM (fase 5)
+  razonFiltro: text('razon_filtro'), // sin uso por ahora (venía del diseño con IA, descartado)
   datosCrudos: jsonb('datos_crudos'), // respuesta original del sitio, por si la necesitamos
   ...marcasDeTiempo,
 }, (t) => [
@@ -92,19 +103,15 @@ export const ofertas = pgTable('ofertas', {
 
 // ---------- postulaciones: el intento de postular a una oferta ----------
 
-export type RespuestaFormulario = {
-  pregunta: string;
-  respuesta: string;
-  campoPerfil: string; // REGLA: de qué campo del perfil sale la respuesta
-};
-
 export const postulaciones = pgTable('postulaciones', {
   id: serial('id').primaryKey(),
   ofertaId: integer('oferta_id').notNull().references(() => ofertas.id),
+  // pendiente = esperando tus respuestas por Telegram; en_progreso = respuestas completas, lista para llenar (4b)
   estado: estadoPostulacion('estado').notNull().default('en_progreso'),
   idiomaCv: idiomaCv('idioma_cv'),
-  respuestas: jsonb('respuestas').$type<RespuestaFormulario[]>().notNull().default([]),
-  preguntasPendientes: jsonb('preguntas_pendientes').$type<string[]>().notNull().default([]),
+  respuestas: jsonb('respuestas').$type<Respuesta[]>().notNull().default([]),
+  // La primera de la lista es la que se te está preguntando ahora
+  preguntasPendientes: jsonb('preguntas_pendientes').$type<Pregunta[]>().notNull().default([]),
   rutaCaptura: text('ruta_captura'), // captura antes de enviar (Playwright)
   error: text('error'),
   enviadaEn: timestamp('enviada_en', { withTimezone: true }),
@@ -113,3 +120,13 @@ export const postulaciones = pgTable('postulaciones', {
   // REGLA: una sola postulación por oferta.
   uniqueIndex('postulaciones_oferta_uq').on(t.ofertaId),
 ]);
+
+// ---------- respuestas_guardadas: lo que respondiste, para no volver a preguntarlo ----------
+
+export const respuestasGuardadas = pgTable('respuestas_guardadas', {
+  id: serial('id').primaryKey(),
+  clave: text('clave').notNull(), // la pregunta normalizada: "linkedin profile"
+  pregunta: text('pregunta').notNull(), // tal como apareció la primera vez
+  respuesta: text('respuesta').notNull(),
+  ...marcasDeTiempo,
+}, (t) => [uniqueIndex('respuestas_guardadas_clave_uq').on(t.clave)]);

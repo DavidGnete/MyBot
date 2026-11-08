@@ -19,6 +19,17 @@ const esquemaConfig = z.object({
   TELEGRAM_BOT_TOKEN: z.string().regex(/^\d+:[\w-]+$/, 'Formato esperado: 123456:ABC...').optional(),
   // Vacío = todavía no lo conoces (el bot te lo dice con /start)
   TELEGRAM_CHAT_ID: z.preprocess((v) => (v === '' ? undefined : v), z.coerce.number().int().optional()),
+
+  // --- Postulación ---
+  // Máximo de postulaciones ENVIADAS por día (hora Colombia)
+  LIMITE_DIARIO: z.coerce.number().int().positive().default(10),
+
+  // --- Navegador (Playwright) ---
+  // true = ves la ventana mientras llena el formulario (útil para aprender/depurar)
+  NAVEGADOR_VISIBLE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
 });
 
 const resultado = esquemaConfig.safeParse(process.env);

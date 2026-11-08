@@ -3,7 +3,7 @@ import { db } from './db/cliente.js';
 import { ajustes } from './db/esquema.js';
 
 // Las claves posibles quedan fijadas aquí: un error de escritura no compila.
-export type ClaveAjuste = 'rol';
+export type ClaveAjuste = 'rol' | 'excluir' | 'pais';
 
 export async function obtenerAjuste(clave: ClaveAjuste): Promise<string | undefined> {
   const [fila] = await db.select().from(ajustes).where(eq(ajustes.clave, clave));
