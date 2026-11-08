@@ -90,7 +90,10 @@ export function crearPostular(deps: Dependencias): Composer<Context> {
       .orderBy(desc(ofertas.creadoEn));
     // Solo las que coinciden con tu rol ACTUAL (si cambiaste de rol, las viejas no estorban)
     const [rol, excluir] = await Promise.all([obtenerAjuste('rol'), obtenerAjuste('excluir')]);
-    const delRol = rol ? todas.filter(({ oferta }) => coincideConRol(oferta.titulo, rol, excluir)) : todas;
+    // (las del correo ya vienen filtradas por cada portal: no se filtran por rol)
+    const delRol = rol
+      ? todas.filter(({ oferta, fuente }) => fuente.tipo === 'correo' || coincideConRol(oferta.titulo, rol, excluir))
+      : todas;
     const filas = filtro ? delRol.filter(({ fuente }) => clavePlataforma(fuente.nombre).includes(filtro)) : delRol;
 
     if (filas.length === 0) {

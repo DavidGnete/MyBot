@@ -12,6 +12,8 @@ const PREDETERMINADAS: { tipo: TipoFuente; nombre: string; requiere?: () => bool
   { tipo: 'remoteok', nombre: 'Remote OK' },
   { tipo: 'remotive', nombre: 'Remotive' },
   { tipo: 'jooble', nombre: 'Jooble', requiere: () => Boolean(config.JOOBLE_API_KEY) }, // solo si hay key
+  // Alertas de Computrabajo, Indeed, elempleo, Magneto y LinkedIn que llegan a tu correo
+  { tipo: 'correo', nombre: 'Correo', requiere: () => Boolean(config.CORREO_USUARIO && config.CORREO_CLAVE_APP) },
 ];
 
 /**

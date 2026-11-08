@@ -30,10 +30,13 @@ function contienePalabras(texto: string, palabras: string[]): boolean {
  *  - no contiene ninguna palabra o frase excluida.
  */
 export function coincideConRol(titulo: string, rol: string, excluir: string | undefined): boolean {
+  if (estaExcluido(titulo, excluir)) return false;
   const tituloNormal = normalizar(titulo);
-
-  const excluido = separarLista(excluir).some((frase) => contienePalabras(tituloNormal, frase.split(' ')));
-  if (excluido) return false;
-
   return separarLista(rol).some((alternativa) => contienePalabras(tituloNormal, alternativa.split(' ')));
+}
+
+/** ¿El título tiene alguna palabra o frase de /excluir? */
+export function estaExcluido(titulo: string, excluir: string | undefined): boolean {
+  const tituloNormal = normalizar(titulo);
+  return separarLista(excluir).some((frase) => contienePalabras(tituloNormal, frase.split(' ')));
 }

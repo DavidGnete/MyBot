@@ -5,10 +5,20 @@ import { remoteok } from './remoteok.js';
 import { himalayas } from './himalayas.js';
 import { getonboard } from './getonboard.js';
 import { jooble } from './jooble.js';
+import { correo } from './correo.js';
 import type { LectorFuente } from './tipos.js';
 
 // Tipos de fuente que sabemos leer. Agregar un sitio = una línea aquí + su archivo.
-export const LECTORES = { greenhouse, lever, remotive, remoteok, himalayas, getonboard, jooble } satisfies Record<string, LectorFuente>;
+export const LECTORES = {
+  greenhouse,
+  lever,
+  remotive,
+  remoteok,
+  himalayas,
+  getonboard,
+  jooble,
+  correo,
+} satisfies Record<string, LectorFuente>;
 
 export type TipoFuente = keyof typeof LECTORES;
 

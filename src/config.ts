@@ -25,6 +25,12 @@ const esquemaConfig = z.object({
   // Cada key sirve solo en el sitio del país donde se registró (co.jooble.org = Colombia)
   JOOBLE_SITIO: z.string().regex(/^([a-z]{2}\.)?jooble\.org$/, 'Ej: co.jooble.org').default('co.jooble.org'),
 
+  // --- Correo de alertas (Gmail por IMAP, solo lectura) ---
+  CORREO_IMAP_HOST: z.string().default('imap.gmail.com'),
+  CORREO_USUARIO: z.email().optional(),
+  // Contraseña de APLICACIÓN de Gmail (16 letras), NO tu contraseña normal. Se ignoran los espacios.
+  CORREO_CLAVE_APP: z.string().min(1).transform((v) => v.replace(/\s+/g, '')).optional(),
+
   // --- Postulación ---
   // Máximo de postulaciones ENVIADAS por día (hora Colombia)
   LIMITE_DIARIO: z.coerce.number().int().positive().default(10),

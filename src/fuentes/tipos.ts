@@ -27,6 +27,11 @@ export interface LectorFuente {
    * si no, uno corto evita repeticiones accidentales sin bloquearte.
    */
   esperaMinimaMinutos: number;
+  /**
+   * false = no filtrar por las palabras del rol (solo por /excluir).
+   * Para fuentes que YA vienen filtradas, como las alertas de correo.
+   */
+  filtrarPorRol?: boolean;
   /** Comprueba que la fuente existe y devuelve su nombre y cuántas ofertas tiene. */
   verificar(identificador: string): Promise<{ nombre: string; totalOfertas: number }>;
   /** Lee las ofertas publicadas. */

@@ -4,7 +4,7 @@ import { fuentes, ofertas } from '../db/esquema.js';
 import { obtenerAjuste } from '../ajustes.js';
 import { LECTORES, type TipoFuente } from '../fuentes/index.js';
 import { ErrorFuente } from '../fuentes/tipos.js';
-import { coincideConRol } from './filtro.js';
+import { coincideConRol, estaExcluido } from './filtro.js';
 import { esAutomatizable } from '../postulacion/preparar.js';
 import { logger } from '../logger.js';
 
@@ -77,7 +77,10 @@ export async function buscarOfertas(): Promise<ResultadoBusqueda> {
     // Cada fuente se maneja por separado: si una falla, las demás siguen.
     try {
       const leidas = await lector.leerOfertas(fuente, { rol, pais: pais || undefined });
-      const coinciden = leidas.filter((oferta) => coincideConRol(oferta.titulo, rol, excluir));
+      // Las fuentes ya filtradas (alertas de correo) solo pasan por /excluir
+      const coinciden = leidas.filter((oferta) =>
+        lector.filtrarPorRol === false ? !estaExcluido(oferta.titulo, excluir) : coincideConRol(oferta.titulo, rol, excluir),
+      );
       resultado.fuentesRevisadas++;
       resultado.ofertasLeidas += leidas.length;
       resultado.coincidencias += coinciden.length;
