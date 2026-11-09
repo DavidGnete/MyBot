@@ -28,7 +28,7 @@ export const greenhouse: LectorFuente = {
   async verificar(identificador) {
     const tablero = await obtenerJson(`${API}/${encodeURIComponent(identificador)}`, esquemaTablero);
     const { jobs } = await obtenerJson(`${API}/${encodeURIComponent(identificador)}/jobs`, esquemaOfertas);
-    return { nombre: tablero.name, totalOfertas: jobs.length };
+    return { nombre: tablero.name.trim(), totalOfertas: jobs.length };
   },
 
   async leerOfertas({ identificador, nombre }) {
@@ -37,7 +37,7 @@ export const greenhouse: LectorFuente = {
       (job): OfertaLeida => ({
         idExterno: String(job.id),
         titulo: job.title,
-        empresa: job.company_name ?? nombre,
+        empresa: (job.company_name ?? nombre).trim(),
         ubicacion: job.location?.name ?? null,
         url: job.absolute_url,
         publicadaEn: new Date(job.first_published ?? job.updated_at),

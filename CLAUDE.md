@@ -52,12 +52,19 @@ Proyecto personal de aprendizaje. Claude actúa como **mentor técnico**: explic
     - Código pasado a `page.evaluate` no debe tener funciones con nombre (tsx inyecta `__name`); preferir locators.
   - [x] **4c — Envío:** botones [Enviar]/[Cancelar] bajo la vista previa (solo si quedó completa); cola `enviar-postulacion` sin reintentos. Candado atómico oferta `apta→postulando`. `LIMITE_DIARIO` (10) cuenta postulaciones `enviada` desde medianoche Colombia. PDF subido como "Resume.pdf"/"Hoja de vida.pdf"; si la subida no se ve en 30 s NO se envía. Evidencia `capturas/envio-N-antes.png` y `-despues.png`. Éxito solo con señal positiva NUEVA (URL `/confirmation` o texto de agradecimiento que no estaba antes); si no → `manual` + aviso de revisar el correo antes de repostular.
   - Resultado del primer envío real (2026-11-08, Clara): tras Submit, Greenhouse pidió un **código de verificación enviado al correo** → el envío headless NO se completó. Por eso el envío automático se reemplazó por el modo asistido (4d).
-  - [x] **4d — Modo asistido (ACTUAL, decisión del usuario; probado con éxito por el usuario):** botón [🖥️ Abrir en mi PC para enviar] → cola `envio-asistido` (expireInSeconds 1800) → `conVentanaVisible()` abre Chrome visible, llena todo, adjunta el PDF elegido EN ESE MOMENTO, guarda evidencia, deja Submit a la vista y espera hasta 20 min a que el usuario escriba el código del correo / resuelva el CAPTCHA / haga Submit. Confirmada solo con `/confirmation` o texto de éxito nuevo. El bot NO hace clic en Submit. Requiere que el bot corra en un PC con pantalla (impacta la Fase 6). `/postular_N` sobre una postulación en `error` la reabre. `/editar_N` cambia una respuesta guardada y la propaga a postulaciones no enviadas. **El usuario pidió resolver CAPTCHAs con Bright Data (2026-11-08): se rechazó** (regla del proyecto, política de la organización, términos de Greenhouse y riesgo de que descarten sus postulaciones). No implementar servicios de resolución de CAPTCHA.
+  - [x] **4d — Modo asistido (REEMPLAZADO en la Fase 6 por envío headless + código por Telegram; se conserva la descripción como historia):** botón [🖥️ Abrir en mi PC para enviar] → cola `envio-asistido` (expireInSeconds 1800) → `conVentanaVisible()` abre Chrome visible, llena todo, adjunta el PDF elegido EN ESE MOMENTO, guarda evidencia, deja Submit a la vista y espera hasta 20 min a que el usuario escriba el código del correo / resuelva el CAPTCHA / haga Submit. Confirmada solo con `/confirmation` o texto de éxito nuevo. El bot NO hace clic en Submit. Requiere que el bot corra en un PC con pantalla (impacta la Fase 6). `/postular_N` sobre una postulación en `error` la reabre. `/editar_N` cambia una respuesta guardada y la propaga a postulaciones no enviadas. **El usuario pidió resolver CAPTCHAs con Bright Data (2026-11-08): se rechazó** (regla del proyecto, política de la organización, términos de Greenhouse y riesgo de que descarten sus postulaciones). No implementar servicios de resolución de CAPTCHA.
 - **Fase 5 — Más plataformas** (investigado 2026-11-08):
   - [ ] **5a — Get on Board + Jooble (búsqueda):** Get on Board = API pública sin key (`/api/v0/search/jobs`, params `query`, `country_code` ISO vía `fuentes/paises.ts`, `per_page`≤20, `page`, `expand=["company"]`). Jooble = `POST https://{JOOBLE_SITIO}/api/{JOOBLE_API_KEY}`. Comprobado: cada key sirve SOLO en el sitio del país donde se registró (403 en los demás). El usuario tiene una key de `co.jooble.org` (por defecto) → ofertas de Colombia. Ambas predeterminadas (Jooble solo si hay key); sus ofertas son `manual`.
   - [x] **5a**: probado por el usuario (Jooble con key de co.jooble.org).
   - [x] **5b — Lector de alertas por correo** (verificado 2026-11-08: conexión IMAP OK; Indeed 31 ofertas de 10 correos, Computrabajo 7 de 5; LinkedIn: aún sin alertas de empleo reales — solo se leen remitentes `*job*@linkedin.com`, nunca boletines ni invitaciones) (Computrabajo, Indeed, elempleo, Magneto, LinkedIn): Gmail dedicado (no el corporativo) por IMAP con contraseña de aplicación (`CORREO_USUARIO`, `CORREO_CLAVE_APP`). `src/correo/`: `buzon.ts` abre INBOX con `readOnly: true`, baja primero solo remitentes y el contenido solo de portales conocidos; cursor `{validez: UIDVALIDITY, uid}` en ajuste `correo_cursor` (primera vez: últimos 3 días). `plataformas.ts` = patrones por portal (PRIMER INTENTO sin correos reales: ajustar con `npm run correo:diagnostico`). Fuente `correo` con `filtrarPorRol: false` (solo aplica /excluir). Todas sus ofertas son manuales. **NO automatizar Computrabajo ni Indeed con navegador**: Computrabajo bloquea bots (403) e Indeed prohíbe en sus términos automatizar postulaciones y el scraping → riesgo de suspensión de la cuenta del usuario.
-  - [ ] **5c — Postular en Get on Board** (exige login) con modo asistido + ventana de login.
+  - [x] **5c — Ofertas ✋:** reemplazado por `/abrir_N` con link (ver Fase 6). Las ventanas con sesión se eliminaron.
+  - [x] **5d — Resumen diario + historial:** cola `resumen-diario` a las 8:00 (Bogotá) con `construirResumen()`; `/resumen`, `/historial` (🤖 asistida por el bot / ✋ confirmada a mano). Código: `src/resumen.ts`.
+- [ ] **Fase 6 — Despliegue 24/7 (PRÓXIMA SESIÓN: solo desplegar).** Decisiones del usuario (2026-11-08): **VPS Hetzner CX23**; en el VPS no hay ventanas, así que:
+  - `/abrir_N` manda el link para el navegador del usuario + botones [✅ Ya postulé]/[❌ No] (se eliminaron `/sesion` y las ventanas de Playwright: Google/LinkedIn bloquean login en navegadores automatizados y un VPS no tiene pantalla).
+  - Greenhouse se envía headless (`enviar.ts`, cola `envio-con-codigo`, expire 45 min). Si pide el código del correo, el bot lo pide por Telegram (`postulacion/codigos.ts`, `/cancelar_codigo`). NUNCA leer el código automáticamente del Gmail (sería saltarse la verificación). CAPTCHA visible → `manual`.
+  - Archivos listos: `Dockerfile` (imagen `mcr.microsoft.com/playwright:v1.64.1-noble`, debe coincidir con `@playwright/test`; `npm ci --include=dev`; usuario `pwuser`), `.dockerignore`, servicio `app` en `docker-compose.yml` con `profiles: ["produccion"]`, `init`, `ipc: host`, volúmenes `./datos` y `./capturas`; migraciones automáticas al arrancar (`src/db/migrar.ts`).
+  - Guía paso a paso: **`docs/DESPLIEGUE.md`**.
+  - ✅ Imagen verificada en el PC (2026-11-08): corre como `pwuser`, tiene `tsx` y `@playwright/test`, Chromium abre páginas. El VPS NO recibe esta imagen: clona el repo de GitHub y construye la suya con el mismo `Dockerfile`.
 - [ ] **Portales con inicio de sesión** (regla general): Decisión del usuario (2026-11-08): **NO credenciales en `.env`**. El bot abre una ventana VISIBLE de Playwright en el PC del usuario SOLO para sitios que exigen login; el usuario inicia sesión ahí una vez y se guarda la sesión (`storageState` en `datos/sesiones/<sitio>.json`, fuera de git) para reutilizarla. Si la sesión expira, avisar por Telegram para repetir el login.
 - [ ] **Fase 6 — Despliegue:** Dockerfile basado en la imagen oficial de Playwright, reinicio automático, instrucciones para el VPS.
 
@@ -76,18 +83,20 @@ Proyecto personal de aprendizaje. Claude actúa como **mentor técnico**: explic
 ## Estructura de carpetas
 ```
 Bot/
-├── CLAUDE.md, .env.example, .gitignore, docker-compose.yml, drizzle.config.ts
+├── CLAUDE.md, .env.example, .gitignore, drizzle.config.ts
+├── Dockerfile, .dockerignore, docker-compose.yml   # servicio "app" con perfil "produccion"
+├── docs/DESPLIEGUE.md   # guía paso a paso para el VPS
 ├── datos/          # NO se sube: cv-es.pdf, cv-en.pdf
-├── capturas/       # NO se sube: evidencia antes de enviar
+├── capturas/       # NO se sube: evidencia de vistas previas y envíos
 └── src/
-    ├── index.ts    # arranque: bot + (fase 3) pg-boss
-    ├── config.ts   # valida .env con Zod
-    ├── logger.ts   # pino
-    ├── ajustes.ts  # rol buscado y otros ajustes (tabla ajustes)
-    ├── hojas-de-vida.ts  # dónde están los PDF
-    ├── db/         # cliente.ts, esquema.ts, migraciones/
-    ├── telegram/   # bot.ts, comandos.ts, recibir-pdf.ts
-    ├── fuentes/    # (fase 3) greenhouse.ts, lever.ts
-    ├── trabajos/   # (fase 3) programador.ts, buscar.ts
-    └── postuladores/  # (fase 4) greenhouse.ts, lever.ts
+    ├── index.ts    # arranque: migraciones + fuentes predeterminadas + pg-boss + bot
+    ├── config.ts, logger.ts, ajustes.ts, hojas-de-vida.ts, resumen.ts
+    ├── db/         # cliente.ts, esquema.ts, migrar.ts, migraciones/
+    ├── fuentes/    # un lector por sitio (greenhouse, lever, himalayas, remoteok, remotive, getonboard, jooble, correo) + predeterminadas.ts, paises.ts
+    ├── busqueda/   # filtro.ts, buscar-ofertas.ts, formatear.ts
+    ├── correo/     # buzon.ts (IMAP solo lectura), plataformas.ts, extraer-links.ts, diagnostico.ts
+    ├── postulacion/ # preguntas Greenhouse, respuestas guardadas, vista previa, envío, códigos
+    ├── trabajos/   # programador.ts (pg-boss: búsqueda horaria, resumen 8:00, vista previa, envío)
+    ├── telegram/   # bot.ts, comandos*.ts, postular.ts, recibir-pdf.ts, mensajes-largos.ts
+    └── utilidades/ # pausas.ts
 ```

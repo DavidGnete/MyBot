@@ -13,6 +13,7 @@ import {
 } from '../postulacion/preparar.js';
 import { cancelarPostulacion } from '../postulacion/enviar.js';
 import { editarRespuestaGuardada } from '../postulacion/respuestas-guardadas.js';
+import { entregarCodigo, hayCodigoPendiente } from '../postulacion/codigos.js';
 import { clavePlataforma } from '../busqueda/formatear.js';
 import { responderLargo } from './mensajes-largos.js';
 import { obtenerAjuste } from '../ajustes.js';
@@ -125,7 +126,7 @@ export function crearPostular(deps: Dependencias): Composer<Context> {
     for (const [plataforma, lista] of porPlataforma) {
       lineas.push('', `vía ${plataforma} (${lista.length}):`);
       for (const { oferta } of lista.slice(0, cuantas)) {
-        lineas.push(`• ${oferta.titulo} — ${oferta.empresa}${oferta.ubicacion ? ` (${oferta.ubicacion})` : ''}`, `  ${oferta.url}`);
+        lineas.push(`• ${oferta.titulo} — ${oferta.empresa}${oferta.ubicacion ? ` (${oferta.ubicacion})` : ''}`, `  🖥️ /abrir_${oferta.id}  ${oferta.url}`);
       }
       if (lista.length > cuantas) lineas.push(filtro ? `  …y ${lista.length - cuantas} más` : `  …ver todas: /ofertas ${clavePlataforma(plataforma)}`);
     }
@@ -164,11 +165,22 @@ export function crearPostular(deps: Dependencias): Composer<Context> {
   // Respuesta guardada que estás editando (/editar_N). En memoria: si el bot se reinicia, repites /editar_N.
   let editando: { id: number; pregunta: string } | undefined;
 
-  // Texto libre: primero una edición en curso; luego una pregunta de postulación; si no, siguiente manejador.
+  // /cancelar_codigo — si no quieres (o no puedes) dar el código de verificación
+  postular.command('cancelar_codigo', async (ctx) => {
+    await ctx.reply(entregarCodigo(null) ? '🛑 Cancelado: la postulación queda para que la hagas tú.' : 'No estoy esperando ningún código.');
+  });
+
+  // Texto libre, en orden de prioridad: código de verificación > edición > pregunta de postulación.
   postular.on('message:text', async (ctx, next) => {
     if (ctx.message.text.startsWith('/')) {
       editando = undefined; // cualquier comando cancela la edición
       return next();
+    }
+    const empresaEsperandoCodigo = hayCodigoPendiente();
+    if (empresaEsperandoCodigo) {
+      entregarCodigo(ctx.message.text);
+      await ctx.reply(`🔐 Escribiendo el código en el formulario de ${empresaEsperandoCodigo}… te aviso el resultado.`);
+      return;
     }
     if (editando) {
       const { id } = editando;
@@ -234,10 +246,13 @@ export function crearPostular(deps: Dependencias): Composer<Context> {
 
   // [✅ Enviar postulación] bajo la vista previa: ENVÍO REAL
   postular.callbackQuery(/^enviar:(\d+)$/, async (ctx) => {
-    await ctx.answerCallbackQuery({ text: 'Abriendo la ventana en tu PC…' });
+    await ctx.answerCallbackQuery({ text: 'Enviando…' });
     await ctx.editMessageReplyMarkup().catch(() => {}); // quitar botones: evita tocar dos veces
     await deps.enviar(Number(ctx.match[1]));
-    await ctx.reply('🖥️ Preparando la ventana en tu PC (lleno el formulario y adjunto tu hoja de vida). Te aviso cuando esté lista.');
+    await ctx.reply(
+      '📤 Enviando: lleno el formulario, adjunto tu hoja de vida y hago clic en Submit.\n' +
+        'Si Greenhouse pide el código que llega a tu correo, te lo pediré aquí. Ten tu correo a mano. 📬',
+    );
   });
 
   // [❌ Cancelar]

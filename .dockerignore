@@ -1,0 +1,11 @@
+# Nada de esto entra en la imagen de Docker
+node_modules
+.git
+.github
+.env
+.env.*
+datos
+capturas
+test-results
+playwright-report
+*.log

@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      # Solo accesible desde tu PC (127.0.0.1), no desde la red
+      # Solo accesible desde la misma máquina (127.0.0.1), nunca desde internet
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - datos_postgres:/var/lib/postgresql/data
@@ -16,6 +16,31 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # El bot. Solo arranca con el perfil "produccion" (en el VPS):
+  #   docker compose --profile produccion up -d --build
+  # En tu PC sigues usando `npm run dev` (dos bots con el mismo token chocan).
+  app:
+    profiles: ["produccion"]
+    build: .
+    restart: unless-stopped # si se cae o el VPS se reinicia, vuelve a arrancar solo
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      NAVEGADOR_VISIBLE: "false" # un servidor no tiene pantalla
+      # Dentro de Docker, Postgres se llama "postgres" (no localhost) y usa su puerto interno
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy # espera a que Postgres esté listo
+    volumes:
+      - ./datos:/app/datos # hojas de vida (fuera de la imagen)
+      - ./capturas:/app/capturas # evidencia de envíos
+    init: true # recomendado por Playwright: limpia procesos de Chromium huérfanos
+    ipc: host # recomendado por Playwright: evita que Chromium se quede sin memoria compartida
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" } # que los logs no llenen el disco
 
 volumes:
   datos_postgres:

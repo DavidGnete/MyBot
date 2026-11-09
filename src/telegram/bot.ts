@@ -6,6 +6,7 @@ import { comandos } from './comandos.js';
 import { crearComandosFuentes } from './comandos-fuentes.js';
 import { recibirPdf } from './recibir-pdf.js';
 import { crearPostular } from './postular.js';
+import { comandosVentanas } from './comandos-ventanas.js';
 
 type Dependencias = {
   buscarAhora: () => Promise<string | null>;
@@ -61,6 +62,7 @@ export function crearBot(dependencias: Dependencias): Bot {
 
   bot.use(comandos);
   bot.use(crearComandosFuentes(dependencias));
+  bot.use(comandosVentanas); // /sesion, /abrir_N, /historial, /resumen
   bot.use(crearPostular(dependencias)); // antes del "No entendí": el texto libre puede ser una respuesta
   bot.use(recibirPdf);
   bot.on('message', (ctx) => ctx.reply('No entendí. Escribe /ayuda para ver los comandos.'));

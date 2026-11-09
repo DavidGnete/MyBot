@@ -4,8 +4,12 @@ import { pool } from './db/cliente.js';
 import { crearBot, notificar, enviarArchivo } from './telegram/bot.js';
 import { iniciarProgramador } from './trabajos/programador.js';
 import { asegurarFuentesPredeterminadas } from './fuentes/predeterminadas.js';
+import { aplicarMigraciones } from './db/migrar.js';
 
-// Himalayas, Remote OK y Remotive quedan activas sin que tengas que registrarlas
+// 1) Base de datos al día (en el VPS no hay que migrar a mano)
+await aplicarMigraciones();
+
+// 2) Fuentes que buscan solas (Get on Board, Himalayas, Jooble, Correo...)
 await asegurarFuentesPredeterminadas();
 
 // El bot necesita al programador (para /buscar, /llenar) y el programador al bot (para avisar).

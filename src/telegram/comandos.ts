@@ -26,7 +26,12 @@ Busco automáticamente en Himalayas, Remote OK y Remotive (miles de empresas). N
 /saltar — descarta la oferta que estoy preparando
 /respuestas — lo que recuerdo de ti (✏️ /editar_N cambia una, 🗑️ /olvidar_N la borra)
 
-📊 /estado — resumen   ❓ /ayuda — este mensaje
+🖥️ Postular tú (ofertas ✋)
+/abrir_N — te doy el link para tu navegador y registro si postulaste
+/cancelar_codigo — si no quieres dar el código de verificación que te pido
+
+📊 /resumen — resumen del día (llega solo a las 8:00)   📚 /historial — tus postulaciones
+📊 /estado — estado general   ❓ /ayuda — este mensaje
 📎 Envíame tu hoja de vida en PDF para guardarla o reemplazarla.
 `.trim();
 

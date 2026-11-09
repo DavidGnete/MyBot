@@ -52,7 +52,7 @@ export function formatearResultado(resultado: ResultadoBusqueda, manual: boolean
       // "vía <fuente>": los agregadores exigen mencionarlos y enlazar su página
       lineas.push('', `✋ vía ${fuente} (${manuales.length}):`);
       for (const o of manuales.slice(0, POR_FUENTE)) {
-        lineas.push(`• ${o.titulo} — ${o.empresa}${o.ubicacion ? ` (${o.ubicacion})` : ''}`, `  ${o.url}`);
+        lineas.push(`• ${o.titulo} — ${o.empresa}${o.ubicacion ? ` (${o.ubicacion})` : ''}`, `  🖥️ /abrir_${o.id}  ${o.url}`);
       }
       if (manuales.length > POR_FUENTE) lineas.push(`  …y ${manuales.length - POR_FUENTE} más: /ofertas ${clavePlataforma(fuente)}`);
     }
